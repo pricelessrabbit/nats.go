@@ -712,6 +712,38 @@ func (kv *kvs) Delete(key string, opts ...DeleteOpt) error {
 	return err
 }
 
+// DeleteBulk will remove all keys that match the subject pattern. Wildcards are supported.
+// If a key is already deleted, it will be ignored.
+// Returns the list of keys that were deleted.
+func (kv *kvs) DeleteBulk(keys string) ([]string, error) {
+	if !badSubject(keys) {
+		return nil, ErrInvalidKey
+	}
+
+	w, err := kv.Watch(keys, IgnoreDeletes())
+	if err != nil {
+		return nil, err
+	}
+
+	var deletedKeys []string
+	for entry := range w.Updates() {
+		if entry != nil {
+			err = kv.Delete(entry.Key())
+			if err != nil && err != ErrKeyDeleted {
+				return deletedKeys, err
+			}
+			if err == nil {
+				deletedKeys = append(deletedKeys, entry.Key())
+			}
+		} else {
+			err = w.Stop()
+			break
+		}
+	}
+
+	return deletedKeys, nil
+}
+
 // Purge will remove the key and all revisions.
 func (kv *kvs) Purge(key string, opts ...DeleteOpt) error {
 	return kv.Delete(key, append(opts, purge())...)
